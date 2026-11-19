@@ -298,7 +298,15 @@ GuardAI:
 	DEX
 	BMI .odone
 	JMP .ol
-.odone	JMP L1_F45B
+.odone	LDX #$03                 ; the partner-separation nudge can push a
+.cl	LDA GY,X                 ; guard above GYMAX (into the boss band,
+	CMP #GYMAX+1             ; where it is cut off): clamp
+	BCC .cn
+	LDA #GYMAX
+	STA GY,X
+.cn	DEX
+	BPL .cl
+	JMP L1_F45B
 .okill	JSR KillSlot
 	JMP .onext
 

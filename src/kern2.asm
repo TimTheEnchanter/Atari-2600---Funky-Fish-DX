@@ -179,6 +179,11 @@ BossK:
 	STA $E6
 .go	LDX #$01
 	LDY $E5
+	LDA #0                   ; fish sprite: UA's loop only clears GRP0 by
+	CPY #$0B                 ; drawing the fish's blank last row; if that
+	BCS .gz                  ; row fell on lines A-C it was skipped and the
+	LDA ($9D),Y              ; last fish row stayed on down the screen
+.gz	STA GRP0
 	LDA ($9D),Y
 	JMP L0_FC02
 
