@@ -18,7 +18,7 @@
 90 CAMXLO
 91 PARKX      off-screen / scenery X
 92 PLHM       player HMxx|coarse
-93 BUBHM      bubble HMxx|coarse
+93 BOSSHM     boss block (ball) HM|coarse
 94 PLY        player Y (grows upward, $0E-$71)
 95 BUBY       bubble Y
 96 TICK3      incremented every 3 frames

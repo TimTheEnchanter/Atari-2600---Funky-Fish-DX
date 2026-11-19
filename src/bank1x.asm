@@ -13,6 +13,7 @@ GuardBase: .byte 8,12,16,19
 SinkMask: .byte $06,$02,$02,$00
 
 ; --- Round check: all bosses dead and glow timers out -> next round -----
+	SUBROUTINE
 RoundChk:
 	LDX #4
 	LDA #0
@@ -26,6 +27,7 @@ RoundChk:
 	JSR RoundInit
 .x	JMP TR_SWAP
 
+	SUBROUTINE
 RoundInit:
 	LDA GSTATE
 	AND #$03
@@ -55,6 +57,8 @@ RoundInit:
 	DEX
 	BNE .p
 	STX BUBST
+	LDA #BANNER_T            ; M4: "ROUND n" banner
+	STA ROUNDT
 	LDA #$FF                 ; refill power
 	STA POWER
 	LDA PLAYER               ; round-clear jingle: reuse the eat sound
@@ -67,6 +71,7 @@ RoundInit:
 
 ; difficulty helpers ----------------------------------------------------
 ; C set if guards should dart at the player (round 2+, or variants 3/4)
+	SUBROUTINE
 DartOn:
 	LDA ROUND
 	BNE .y
@@ -79,6 +84,7 @@ DartOn:
 	RTS
 
 ; --- Bubble hit test (from $F591): Z set for a target hit (swimmer or seahorse)
+	SUBROUTINE
 HitTest:
 	LDA GST-1,X
 	AND #$FD
@@ -86,6 +92,7 @@ HitTest:
 	RTS
 
 ; bubble hit (from $F5C9)
+	SUBROUTINE
 HitDo:
 	LDA GST-1,X
 	CMP #$03
@@ -119,6 +126,8 @@ HitDo:
 ; State 3 seahorse (also UA's roamers): homes on the player, leaves when its
 ;   timer runs out.
 SEAHORSE_T = $50
+GYMAX   = $5C         ; highest guard Y (band start line $72-$5C = 22 = BOSS_S+3)
+	SUBROUTINE
 GuardAI:
 	LDA FRAME
 	ADC CYC3
@@ -261,6 +270,8 @@ GuardAI:
 	LDA D1_F018,Y
 .oadd	CLC
 	ADC GY,X
+	CMP #GYMAX+1             ; M3: guards stay below the boss band (P1 draws the boss there)
+	BCS .onext
 	CMP #$7A
 	BCS .okill
 	CMP #$0B
@@ -293,6 +304,7 @@ GuardAI:
 
 ; timer ran out? swimmer: nothing; fruit: nothing (it sinks instead);
 ; seahorse/roamer: swims away (slot emptied). C set if the slot was removed.
+	SUBROUTINE
 Expire:
 	LDA GTMR,X
 	BNE .no
@@ -310,3 +322,41 @@ KillSlot:
 	RTS
 .no	CLC
 	RTS
+
+; --- M3: boss touch by position (the ball now draws the bubble) ----------
+; V set if the fish overlaps the monster horizontally: fish X - boss X in
+; -10..+8 (UA's ball collision measured -6..+4, widened for the 16 px
+; monster). UA's code then checks PLY $66-$75 as before.
+	SUBROUTINE
+BossTouch:
+	LDX BOSSIDX
+	BMI .no
+	SEC
+	LDA PLXLO
+	SBC BossLo1,X
+	TAY
+	LDA PLXHI
+	SBC BossHi1,X
+	BEQ .pos
+	CMP #$FF
+	BNE .no
+	CPY #$F6                 ; -10..-1
+	BCS .yes
+.no	CLV
+	RTS
+.pos	CPY #$09                 ; 0..+8
+	BCS .no
+.yes	BIT .v40
+	RTS
+.v40	.byte $40
+
+; M4: while the round banner is up the game logic is paused
+	SUBROUTINE
+PreLogic:
+	LDA ROUNDT
+	BEQ .go
+	DEC ROUNDT
+	PLA
+	PLA
+	JMP TR_SWAP
+.go	JMP L1_F05D

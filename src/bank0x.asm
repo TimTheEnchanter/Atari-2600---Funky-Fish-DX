@@ -6,6 +6,7 @@
 ; --- Radar boss blips (replaces $FA7D-$FAEB; same line count) -----------
 ; Even frames: P1 at boss 0 (bit7) / boss 1 (bit0). Odd: bosses 2 / 3.
 ; M1 shows boss 4 on odd frames, so every blip flickers at 30 Hz as before.
+	SUBROUTINE
 RadarBlips:
 	LDA FRAME
 	LSR
@@ -78,3 +79,4 @@ RadarBlips:
 	STY PF2
 	STY GRP0
 	JMP L0_FAEC
+

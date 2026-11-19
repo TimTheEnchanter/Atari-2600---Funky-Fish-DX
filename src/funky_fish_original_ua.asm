@@ -95,7 +95,7 @@ CAMXHI     = $8F   ; camera world X
 CAMXLO     = $90   ; 
 PARKX      = $91   ; off-screen / scenery X
 PLHM       = $92   ; player HMxx|coarse
-BUBHM      = $93   ; bubble HMxx|coarse
+BOSSHM     = $93   ; boss block (ball) HM|coarse
 PLY        = $94   ; player Y (grows upward, $0E-$71)
 BUBY       = $95   ; bubble Y
 TICK3      = $96   ; incremented every 3 frames
@@ -894,7 +894,7 @@ L0_F7CB:
 	LDA TMP1                ; F7CB: A5 E1
 L0_F7CD:
 	JSR L0_FE8F             ; F7CD: 20 8F FE
-	STA BUBHM               ; F7D0: 85 93
+	STA BOSSHM              ; F7D0: 85 93
 L0_F7D2:
 	LDX #$00                ; F7D2: A2 00
 	LDA FRAME               ; F7D4: A5 82
@@ -1423,10 +1423,10 @@ L0_FB59:
 	LDA $C2                 ; FB7D: A5 C2
 	INX                     ; FB7F: E8
 	JSR L0_F388             ; FB80: 20 88 F3
-	LDA BUBHM               ; FB83: A5 93
+	LDA BOSSHM              ; FB83: A5 93
 	AND #$0F                ; FB85: 29 0F
 	TAY                     ; FB87: A8
-	LDA BUBHM               ; FB88: A5 93
+	LDA BOSSHM              ; FB88: A5 93
 	LDX #$04                ; FB8A: A2 04
 	JSR L0_F388             ; FB8C: 20 88 F3
 	LDA $BD                 ; FB8F: A5 BD

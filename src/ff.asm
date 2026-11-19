@@ -3,15 +3,19 @@
 
 	processor 6502
 VBLANK_T = $7C
-OSCAN_GAME = $2C
-OSCAN_TITLE = $46
+OSCAN_GAME = $2B
+OSCAN_TITLE = $28
 ROUND    = $DE      ; M2: round number (0 = first)
+ROUNDT   = $DF      ; M4: round banner frames left
+BANNER_T = 120
 RADA_HM  = $F0
 RADA_CO  = 6
 RADB_HM  = $10
 RADB_CO  = 8
 RADM_HM  = $10
 RADM_CO  = 10
+T_HM0    = $F0
+T_HM1    = $00
 
 
 VSYNC    = $00
@@ -106,7 +110,7 @@ CAMXHI     = $8F   ; camera world X
 CAMXLO     = $90   ; 
 PARKX      = $91   ; off-screen / scenery X
 PLHM       = $92   ; player HMxx|coarse
-BUBHM      = $93   ; bubble HMxx|coarse
+BOSSHM     = $93   ; boss block (ball) HM|coarse
 PLY        = $94   ; player Y (grows upward, $0E-$71)
 BUBY       = $95   ; bubble Y
 TICK3      = $96   ; incremented every 3 frames
@@ -135,15 +139,19 @@ HOT0     = $1FF6
 HOT1     = $1FF7
 HOT2     = $1FF8
 HOT3     = $1FF9
-TR_RESET = $FFE0      ; all banks: -> bank 0, JMP Reset
-TR_SWAP  = $FFE6      ; bank 0 -> bank 1 logic ($F03C); bank 1 -> bank 0 ($FDBD)
+TR_RESET = $FFD0      ; all banks: -> bank 0, JMP Reset
+TR_SWAP  = $FFD6      ; bank 0 -> bank 1 logic ($F03C); bank 1 -> bank 0 ($FDBD)
+TR_TITLE = $FFDC      ; bank 0 -> bank 3 title kernel
+TR_BACK  = $FFDC      ; bank 3 -> bank 0 $FD51
+TR_KERN  = $FFE2      ; bank 0 -> bank 2 game kernel (copy of bank 0)
+TR_KBACK = $FFE2      ; bank 2 -> bank 0 $FD51
 FILLB    SET $00
 
 	MAC TRAMP          ; {1} = bank number; pads to $FFE0 and writes trampolines/vectors
 	IF {1} == 0
-	ds.b $FFE0 - ., $00
+	ds.b $FFD0 - ., $00
 	ELSE
-	ds.b $FFE0 - ., $FF
+	ds.b $FFD0 - ., $FF
 	ENDIF
 	sta HOT0           ; FFE0
 	jmp L0_F3D1        ; FFE3 (executes in bank 0)
@@ -158,6 +166,21 @@ FILLB    SET $00
 	sta HOT0
 	jmp L0_FDBD
 	ENDIF
+	ENDIF
+	IF {1} == 0
+	sta HOT3           ; FFDC  bank 0 -> 3 (title)
+	jmp L0_FD51        ; FFDF  (arrival from bank 3)
+	sta HOT2           ; FFE2  bank 0 -> 2 (kernel)
+	jmp L0_FD51        ; FFE5  (arrival from bank 2)
+	ENDIF
+	IF {1} == 3
+	sta HOT0           ; FFDC  bank 3 -> 0
+	jmp TitleK         ; FFDF  (arrival from bank 0)
+	ENDIF
+	IF {1} == 2
+	ds.b 6, $FF        ; FFDC
+	sta HOT0           ; FFE2  bank 2 -> 0
+	jmp K_KernEntry    ; FFE5  (arrival from bank 0)
 	ENDIF
 	ds.b $FFFC - ., $FF
 	.word TR_RESET, TR_RESET
@@ -417,8 +440,9 @@ L0_F43D:
 	DEX                     ; F445: CA
 	STX POWER               ; F446: 86 86
 L0_F448:
-	LDX INTIM               ; F448: AE 84 02
-	BNE L0_F448             ; F44B: D0 FB
+L0_F448:
+	BIT TIMINT              ; overrun-safe: wait for the timer flag    ; patch fix1 (was F448-F448)
+	BPL L0_F448    ; patch fix1 (was F44B-F44B)
 	LDA #$02                ; F44D: A9 02
 	STA WSYNC               ; F44F: 85 02
 	STA VBLANK              ; F451: 85 01
@@ -564,270 +588,37 @@ L0_F53C:
 	STA REFP0               ; F545: 85 0B
 	LDA #VBLANK_T    ; patch ntsc vblank (was F547-F547)
 	STA TIM8T               ; F549: 8D 95 02
-	LDA GSTATE              ; F54C: A5 81
-	AND #$A0                ; F54E: 29 A0
-	BEQ L0_F555             ; F550: F0 03
-	JMP L0_F719             ; F552: 4C 19 F7
+	JMP SelK                 ; M4: title / round banner / game
+	ds.b 6, $EA    ; patch m4 (was F54C-F552)
 L0_F555:
-	LDA FRAME               ; F555: A5 82
-	LSR                     ; F557: 4A
-	BCS L0_F598             ; F558: B0 3E
-	LDA #$30                ; F55A: A9 30
-	LDX #$00                ; F55C: A2 00
-	LDY #$06                ; F55E: A0 06
-	JSR L0_F388             ; F560: 20 88 F3
-	LDA #$20                ; F563: A9 20
-	INX                     ; F565: E8
-	LDY #$07                ; F566: A0 07
-	JSR L0_F388             ; F568: 20 88 F3
-	LDX #$09                ; F56B: A2 09
+	JMP TR_TITLE             ; new flicker-free title in bank 2    ; patch fix1 (was F555-F557)
+	include "bank0z.asm"
+	ds.b $F719 - ., $00
 L0_F56D:
-	LDA D0_F221,X           ; F56D: BD 21 F2
-	STA DIGBUF,X            ; F570: 95 E9
-	DEX                     ; F572: CA
-	BPL L0_F56D             ; F573: 10 F8
-	LDA #$B6                ; F575: A9 B6
-	STA BOSSIDX             ; F577: 85 B7
-	LDA #$F0                ; F579: A9 F0
-	STA PLANTNUS-1          ; F57B: 85 B8
-	LDA #$CA                ; F57D: A9 CA
-	STA PLANTNUS            ; F57F: 85 B9
-	LDA #$F0                ; F581: A9 F0
-	STA SPAWNCNT            ; F583: 85 BA
-	LDA #$DE                ; F585: A9 DE
-	STA $BB                 ; F587: 85 BB
-	LDA #$F0                ; F589: A9 F0
-	STA $BC                 ; F58B: 85 BC
-	LDA #$F2                ; F58D: A9 F2
-	STA $BD                 ; F58F: 85 BD
-	LDA #$F0                ; F591: A9 F0
-	STA $BE                 ; F593: 85 BE
-	JMP L0_F5E8             ; F595: 4C E8 F5
 L0_F598:
-	LDA #$10                ; F598: A9 10
-	LDX #$00                ; F59A: A2 00
-	LDY #$08                ; F59C: A0 08
-	JSR L0_F388             ; F59E: 20 88 F3
-	TYA                     ; F5A1: 98
-	INX                     ; F5A2: E8
-	LDY #$09                ; F5A3: A0 09
-	JSR L0_F388             ; F5A5: 20 88 F3
-	LDX #$09                ; F5A8: A2 09
 L0_F5AA:
-	LDA D0_F22B,X           ; F5AA: BD 2B F2
-	STA DIGBUF,X            ; F5AD: 95 E9
-	DEX                     ; F5AF: CA
-	BPL L0_F5AA             ; F5B0: 10 F8
-	LDY #$05                ; F5B2: A0 05
-	LDA GSTATE              ; F5B4: A5 81
-	AND #$03                ; F5B6: 29 03
-	JSR L0_FF05             ; F5B8: 20 05 FF
-	TAY                     ; F5BB: A8
-	LDX #$08                ; F5BC: A2 08
 L0_F5BE:
-	LDA D0_F235,Y           ; F5BE: B9 35 F2
-	STA DIGBUF,X            ; F5C1: 95 E9
-	INY                     ; F5C3: C8
-	DEX                     ; F5C4: CA
-	DEX                     ; F5C5: CA
-	BPL L0_F5BE             ; F5C6: 10 F6
-	LDA #$C0                ; F5C8: A9 C0
-	STA BOSSIDX             ; F5CA: 85 B7
-	LDA #$F0                ; F5CC: A9 F0
-	STA PLANTNUS-1          ; F5CE: 85 B8
-	LDA #$D4                ; F5D0: A9 D4
-	STA PLANTNUS            ; F5D2: 85 B9
-	LDA #$F0                ; F5D4: A9 F0
-	STA SPAWNCNT            ; F5D6: 85 BA
-	LDA #$E8                ; F5D8: A9 E8
-	STA $BB                 ; F5DA: 85 BB
-	LDA #$F0                ; F5DC: A9 F0
-	STA $BC                 ; F5DE: 85 BC
-	LDA #$FC                ; F5E0: A9 FC
-	STA $BD                 ; F5E2: 85 BD
-	LDA #$F0                ; F5E4: A9 F0
-	STA $BE                 ; F5E6: 85 BE
 L0_F5E8:
-	LDA INTIM               ; F5E8: AD 84 02
-	BNE L0_F5E8             ; F5EB: D0 FB
-	STA WSYNC               ; F5ED: 85 02
-	STA VBLANK              ; F5EF: 85 01
-	STA COLUBK              ; F5F1: 85 09
-	LDA #$32                ; F5F3: A9 32
-	STA TIM64T              ; F5F5: 8D 96 02
-	LDA FRAMEHI             ; F5F8: A5 83
-	LSR                     ; F5FA: 4A
-	LDA FRAME               ; F5FB: A5 82
-	ROR                     ; F5FD: 6A
-	LSR                     ; F5FE: 4A
-	LSR                     ; F5FF: 4A
-	LSR                     ; F600: 4A
-	AND #$0F                ; F601: 29 0F
-	STA BOSSIDX-1           ; F603: 85 B6
-	LDA #$05                ; F605: A9 05
-	STA NUSIZ0              ; F607: 85 04
-	STA NUSIZ1              ; F609: 85 05
 L0_F60B:
-	LDA INTIM               ; F60B: AD 84 02
-	BNE L0_F60B             ; F60E: D0 FB
-	LDY #$09                ; F610: A0 09
 L0_F612:
-	LDA (BOSSIDX),Y         ; F612: B1 B7
-	TAX                     ; F614: AA
-	DEY                     ; F615: 88
-	LDA (BOSSIDX),Y         ; F616: B1 B7
-	STA WSYNC               ; F618: 85 02
-	STX GRP0                ; F61A: 86 1B
-	STA GRP1                ; F61C: 85 1C
-	LDX #$03                ; F61E: A2 03
-	BNE L0_F624             ; F620: D0 02
 L0_F622:
-	STA WSYNC               ; F622: 85 02
 L0_F624:
-	LDA BOSSIDX-1           ; F624: A5 B6
-	STA COLUP0              ; F626: 85 06
-	STA COLUP1              ; F628: 85 07
-	INC BOSSIDX-1           ; F62A: E6 B6
-	INC BOSSIDX-1           ; F62C: E6 B6
-	DEX                     ; F62E: CA
-	BNE L0_F622             ; F62F: D0 F1
-	DEY                     ; F631: 88
-	BPL L0_F612             ; F632: 10 DE
-	STA WSYNC               ; F634: 85 02
-	LDA #$53                ; F636: A9 53
-	STA TIM8T               ; F638: 8D 95 02
-	INY                     ; F63B: C8
-	STY GRP0                ; F63C: 84 1B
-	STY GRP1                ; F63E: 84 1C
 L0_F640:
-	LDA INTIM               ; F640: AD 84 02
-	BNE L0_F640             ; F643: D0 FB
-	LDY #$09                ; F645: A0 09
 L0_F647:
-	LDA.w DIGBUF,Y          ; F647: B9 E9 00
-	TAX                     ; F64A: AA
-	DEY                     ; F64B: 88
-	LDA.w DIGBUF,Y          ; F64C: B9 E9 00
-	STA WSYNC               ; F64F: 85 02
-	STX GRP0                ; F651: 86 1B
-	STA GRP1                ; F653: 85 1C
-	LDX #$03                ; F655: A2 03
-	BNE L0_F65B             ; F657: D0 02
 L0_F659:
-	STA WSYNC               ; F659: 85 02
 L0_F65B:
-	LDA BOSSIDX-1           ; F65B: A5 B6
-	STA COLUP0              ; F65D: 85 06
-	STA COLUP1              ; F65F: 85 07
-	INC BOSSIDX-1           ; F661: E6 B6
-	INC BOSSIDX-1           ; F663: E6 B6
-	DEX                     ; F665: CA
-	BNE L0_F659             ; F666: D0 F1
-	DEY                     ; F668: 88
-	BPL L0_F647             ; F669: 10 DC
-	STA WSYNC               ; F66B: 85 02
-	LDA #$23                ; F66D: A9 23
-	STA TIM64T              ; F66F: 8D 96 02
-	INY                     ; F672: C8
-	STY GRP0                ; F673: 84 1B
-	STY GRP1                ; F675: 84 1C
 L0_F677:
-	LDA INTIM               ; F677: AD 84 02
-	BNE L0_F677             ; F67A: D0 FB
-	STA WSYNC               ; F67C: 85 02
-	LDY #$09                ; F67E: A0 09
 L0_F680:
-	LDA (PLANTNUS),Y        ; F680: B1 B9
-	TAX                     ; F682: AA
-	DEY                     ; F683: 88
-	LDA (PLANTNUS),Y        ; F684: B1 B9
-	STA WSYNC               ; F686: 85 02
-	STX GRP0                ; F688: 86 1B
-	STA GRP1                ; F68A: 85 1C
-	LDX #$03                ; F68C: A2 03
-	BNE L0_F692             ; F68E: D0 02
 L0_F690:
-	STA WSYNC               ; F690: 85 02
 L0_F692:
-	LDA BOSSIDX-1           ; F692: A5 B6
-	STA COLUP0              ; F694: 85 06
-	STA COLUP1              ; F696: 85 07
-	INC BOSSIDX-1           ; F698: E6 B6
-	INC BOSSIDX-1           ; F69A: E6 B6
-	DEX                     ; F69C: CA
-	BNE L0_F690             ; F69D: D0 F1
-	DEY                     ; F69F: 88
-	BPL L0_F680             ; F6A0: 10 DE
-	STA WSYNC               ; F6A2: 85 02
-	LDA #$BC                ; F6A4: A9 BC
-	STA TIM8T               ; F6A6: 8D 95 02
-	INY                     ; F6A9: C8
-	STY GRP0                ; F6AA: 84 1B
-	STY GRP1                ; F6AC: 84 1C
 L0_F6AE:
-	LDA INTIM               ; F6AE: AD 84 02
-	BNE L0_F6AE             ; F6B1: D0 FB
-	LDY #$09                ; F6B3: A0 09
 L0_F6B5:
-	LDA ($BB),Y             ; F6B5: B1 BB
-	TAX                     ; F6B7: AA
-	DEY                     ; F6B8: 88
-	LDA ($BB),Y             ; F6B9: B1 BB
-	STA WSYNC               ; F6BB: 85 02
-	STX GRP0                ; F6BD: 86 1B
-	STA GRP1                ; F6BF: 85 1C
-	LDX #$03                ; F6C1: A2 03
-	BNE L0_F6C7             ; F6C3: D0 02
 L0_F6C5:
-	STA WSYNC               ; F6C5: 85 02
 L0_F6C7:
-	LDA BOSSIDX-1           ; F6C7: A5 B6
-	STA COLUP0              ; F6C9: 85 06
-	STA COLUP1              ; F6CB: 85 07
-	INC BOSSIDX-1           ; F6CD: E6 B6
-	INC BOSSIDX-1           ; F6CF: E6 B6
-	DEX                     ; F6D1: CA
-	BNE L0_F6C5             ; F6D2: D0 F1
-	DEY                     ; F6D4: 88
-	BPL L0_F6B5             ; F6D5: 10 DE
-	STA WSYNC               ; F6D7: 85 02
-	LDA #$2D                ; F6D9: A9 2D
-	STA TIM8T               ; F6DB: 8D 95 02
-	INY                     ; F6DE: C8
-	STY GRP0                ; F6DF: 84 1B
-	STY GRP1                ; F6E1: 84 1C
 L0_F6E3:
-	LDA INTIM               ; F6E3: AD 84 02
-	BNE L0_F6E3             ; F6E6: D0 FB
-	LDY #$09                ; F6E8: A0 09
 L0_F6EA:
-	LDA ($BD),Y             ; F6EA: B1 BD
-	TAX                     ; F6EC: AA
-	DEY                     ; F6ED: 88
-	LDA ($BD),Y             ; F6EE: B1 BD
-	STA WSYNC               ; F6F0: 85 02
-	STX GRP0                ; F6F2: 86 1B
-	STA GRP1                ; F6F4: 85 1C
-	LDX #$03                ; F6F6: A2 03
-	BNE L0_F6FC             ; F6F8: D0 02
 L0_F6FA:
-	STA WSYNC               ; F6FA: 85 02
 L0_F6FC:
-	LDA BOSSIDX-1           ; F6FC: A5 B6
-	STA COLUP0              ; F6FE: 85 06
-	STA COLUP1              ; F700: 85 07
-	INC BOSSIDX-1           ; F702: E6 B6
-	INC BOSSIDX-1           ; F704: E6 B6
-	DEX                     ; F706: CA
-	BNE L0_F6FA             ; F707: D0 F1
-	DEY                     ; F709: 88
-	BPL L0_F6EA             ; F70A: 10 DE
-	LDA #OSCAN_TITLE    ; patch ntsc title (was F70C-F70C)
-	STA TIM64T              ; F70E: 8D 96 02
-	INY                     ; F711: C8
-	STY GRP0                ; F712: 84 1B
-	STY GRP1                ; F714: 84 1C
-	JMP L0_FD51             ; F716: 4C 51 FD
 L0_F719:
 	LDA FRAME               ; F719: A5 82
 	LSR                     ; F71B: 4A
@@ -840,8 +631,8 @@ L0_F719:
 	STA $9F                 ; F725: 85 9F
 	LDA D0_F2C8,X           ; F727: BD C8 F2
 	STA $B0                 ; F72A: 85 B0
-	BIT BUBST               ; F72C: 24 97
-	BPL L0_F74E             ; F72E: 10 1E
+	JMP L0_F74E              ; M3: P0 is always the fish (bubble = ball)
+	NOP    ; patch m3 (was F72C-F72E)
 	LDA CYC3                ; F730: A5 84
 	AND #$02                ; F732: 29 02
 	BNE L0_F74E             ; F734: D0 18
@@ -863,8 +654,8 @@ L0_F74E:
 	LDX PLY                 ; F752: A6 94
 	BIT PLAYER              ; F754: 24 85
 	BVC L0_F761             ; F756: 50 09
-	LDA #$09                ; F758: A9 09
-	STA BOSSIDX-2           ; F75A: 85 B5
+	JSR DeathCol             ; M4: flashing death
+	NOP    ; patch m4 (was F758-F75A)
 	LDA #$80                ; F75C: A9 80
 	JMP L0_F763             ; F75E: 4C 63 F7
 L0_F761:
@@ -933,7 +724,7 @@ L0_F7CB:
 	LDA TMP1                ; F7CB: A5 E1
 L0_F7CD:
 	JSR L0_FE8F             ; F7CD: 20 8F FE
-	STA BUBHM               ; F7D0: 85 93
+	STA BOSSHM              ; F7D0: 85 93
 L0_F7D2:
 	LDX #$00                ; F7D2: A2 00
 	LDA FRAME               ; F7D4: A5 82
@@ -982,7 +773,7 @@ L0_F81E:
 	CLC                     ; F81F: 18
 	ADC #$04                ; F820: 69 04
 	STA TMP1                ; F822: 85 E1
-	LDA D0_F2B7,Y           ; F824: B9 B7 F2
+	LDA GuardFr,Y            ; M3: 5-boss guard frame table    ; patch m3 (was F824-F824)
 	LDY TMP1                ; F827: A4 E1
 	JMP L0_F82F             ; F829: 4C 2F F8
 L0_F82C:
@@ -1166,17 +957,18 @@ L0_F940:
 	ORA #$03                ; F957: 09 03
 	STA BOSSIDX-3           ; F959: 85 B4
 L0_F95B:
-	LDX INTIM               ; F95B: AE 84 02
-	BNE L0_F95B             ; F95E: D0 FB
-	STX WSYNC               ; F960: 86 02
-	STX VBLANK              ; F962: 86 01
-	STA COLUBK              ; F964: 85 09
+	JMP TR_KERN              ; game kernel runs in bank 2
+	.byte $00,$00    ; patch fix1 (was F95E-F95E)
+	.byte $00,$00    ; patch fix1 (was F960-F960)
+	.byte $00,$00    ; patch fix1 (was F962-F962)
+L0_F964:
+	STA COLUBK    ; patch fix1 (was F964-F964)
 	LDA #$37                ; F966: A9 37
 	STA COLUP0              ; F968: 85 06
 	STA COLUP1              ; F96A: 85 07
-	LDA FRAME               ; F96C: A5 82
-	LSR                     ; F96E: 4A
-	BCS L0_F9A1             ; F96F: B0 30
+	JMP L0_F9A1              ; score only (UA alternated with hi score)
+	NOP
+	NOP    ; patch fix1 (was F96C-F96F)
 	LDA #$F0                ; F971: A9 F0
 	LDX #$00                ; F973: A2 00
 	LDY #$09                ; F975: A0 09
@@ -1462,10 +1254,10 @@ L0_FB59:
 	LDA $C2                 ; FB7D: A5 C2
 	INX                     ; FB7F: E8
 	JSR L0_F388             ; FB80: 20 88 F3
-	LDA BUBHM               ; FB83: A5 93
+	LDA BOSSHM              ; FB83: A5 93
 	AND #$0F                ; FB85: 29 0F
 	TAY                     ; FB87: A8
-	LDA BUBHM               ; FB88: A5 93
+	LDA BOSSHM              ; FB88: A5 93
 	LDX #$04                ; FB8A: A2 04
 	JSR L0_F388             ; FB8C: 20 88 F3
 	LDA $BD                 ; FB8F: A5 BD
@@ -1654,7 +1446,7 @@ L0_FCD1:
 	ORA #$10                ; FCD7: 09 10
 	JMP L0_FCCA             ; FCD9: 4C CA FC
 L0_FCDC:
-	JSR L0_FEF2             ; FCDC: 20 F2 FE
+	JSR Digit1               ; was JSR $FEF2 (F6 dummy-read crash)    ; patch fix1 (was FCDC-FCDC)
 	STA WSYNC               ; FCDF: 85 02
 	STA WSYNC               ; FCE1: 85 02
 	JMP L0_FCEE             ; FCE3: 4C EE FC
@@ -1790,7 +1582,7 @@ L0_FDCD:
 	BIT GSTATE              ; FDCD: 24 81
 	BMI L0_FDF1             ; FDCF: 30 20
 	LDA FRAMEHI             ; FDD1: A5 83
-	CMP #$10                ; FDD3: C9 10
+	CMP #$04                 ; M4: attract demo after ~17 s (was ~68 s)    ; patch m4 (was FDD3-FDD3)
 	BNE L0_FDF1             ; FDD5: D0 1A
 	LDA GSTATE              ; FDD7: A5 81
 	BIT D0_F2CF             ; FDD9: 2C CF F2
@@ -2019,7 +1811,7 @@ L0_FF37:
 	LDA TMP3                ; FF37: A5 E3
 	RTS                     ; FF39: 60
 	include "bank0x.asm"
-	ds.b $FFD8 - ., $00
+	ds.b $FFD0 - ., $00
 
 ; ======================================================================
 	TRAMP 0
@@ -2053,7 +1845,7 @@ D1_F03A:
 D1_F03B:
 	.byte $08                                     ; F03B
 L1_F03C:
-	JSR L1_F05D             ; F03C: 20 5D F0
+	JSR PreLogic             ; M4: pause during the round banner    ; patch m4 (was F03C-F03C)
 	JSR L1_F1F4             ; F03F: 20 F4 F1
 	JSR L1_F2F9             ; F042: 20 F9 F2
 	JSR L1_F34D             ; F045: 20 4D F3
@@ -2358,7 +2150,7 @@ L1_F22F:
 	AND #$02                ; F235: 29 02
 	BEQ L1_F25D             ; F237: F0 24
 L1_F239:
-	BIT CXP0FB              ; F239: 24 02
+	JSR BossTouch            ; M3: boss touch by position (V)    ; patch m3 (was F239-F239)
 	BVC L1_F264             ; F23B: 50 27
 	LDA PLY                 ; F23D: A5 94
 	CMP #$66                ; F23F: C9 66
@@ -2577,7 +2369,7 @@ L1_F38E:
 	STA GST,X               ; F3A1: 95 C9
 	LDA TMP1                ; F3A3: A5 E1
 	STA GX,X                ; F3A5: 95 CD
-	LDA #$6E                ; F3A7: A9 6E
+	LDA #$5A                 ; M3: guards spawn below the boss band (was $6E)    ; patch m3 (was F3A7-F3A7)
 	STA GY,X                ; F3A9: 95 D1
 L1_F3AB:
 	DEX                     ; F3AB: CA
@@ -2916,9 +2708,9 @@ L1_F5C8:
 L1_F5C9:
 	JMP HitDo    ; patch m2 (was F5C9-F5DE)
 	include "bank1x.asm"
-	ds.b $FFD8 - ., $00
+	ds.b $FFD0 - ., $00
 
 
 	TRAMP 1
-	include "bank2.asm"
+	include "bank2.asm"   ; generated by build.py: kernel copy of bank 0
 	include "bank3.asm"

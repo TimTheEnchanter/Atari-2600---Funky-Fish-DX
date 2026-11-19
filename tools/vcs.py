@@ -34,6 +34,8 @@ class VCS:
         self.wsync_count = 0
         self.mpu.pc = self.word(0xFFFC)
         self.in_fetch = False
+        self.overruns = 0
+        self.coll = 0
 
     def word(self, a): return self.read(a) | self.read(a + 1) << 8
 
@@ -49,13 +51,21 @@ class VCS:
         elif self.scheme == 'F8' and 0x1FF8 <= a <= 0x1FF9:
             self.bank = a - 0x1FF8
 
-    def intim(self):
+    # RIOT timer like Stella/hardware: after underflow it counts every cycle,
+    # but reading INTIM after the interrupt puts it back on the set interval.
+    def expired(self):
+        el = self.cyc() - self.tim_base
+        return el >= ((self.tim_val + 1) << self.tim_shift) if self.tim_shift else el > self.tim_val
+    def intim(self, reading=False):
         el = (self.cyc() - self.tim_base)
         v = self.tim_val - (el >> self.tim_shift)
         if v >= 0: return v & 0xFF
-        # after underflow counts every cycle
         under = el - ((self.tim_val + 1) << self.tim_shift)
-        return (0xFF - max(0, under)) & 0xFF
+        val = (0xFF - max(0, under)) & 0xFF
+        if reading:
+            self.overruns += 1
+            self.tim_val = val; self.tim_base = self.cyc()   # back to the interval
+        return val
 
     def read(self, a):
         a &= 0x1FFF
@@ -69,13 +79,16 @@ class VCS:
             if r == 0x0C: return 0x00 if self.fire else 0x80   # INPT4
             if r == 0x0D: return 0x80
             if r in (0x08, 0x09, 0x0A, 0x0B): return 0x00
+            if self.coll and r < 8:
+                import random as _r
+                if _r.random() < self.coll: return 0xC0
             return 0x00
         if not (a & 0x200):
             return self.ram[a & 0x7F]
         r = a & 0x07
         if a & 4:
-            if r & 1: return 0  # TIMINT
-            return self.intim()
+            if r & 1: return 0x80 if self.expired() else 0  # TIMINT
+            return self.intim(True)
         if r == 0: return self.swcha
         if r == 2: return self.swchb
         return 0
