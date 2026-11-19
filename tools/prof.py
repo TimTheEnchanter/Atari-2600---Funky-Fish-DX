@@ -4,7 +4,7 @@ from vcs import VCS
 rom=open(sys.argv[1],'rb').read(); N=int(sys.argv[2])
 v=VCS(rom); random.seed(3)
 calls=[0xF03F,0xF042,0xF045,0xF048,0xF04B,0xF04E,0xF051,0xF054,0xF057,0xF05A]
-names=['F05D','F1F4','F2F9','F34D','F495','F3AF','F22F','F584','F52E','F544']
+names=['F05D','F1F4','F2F9','F34D','F495','AI','F22F','F584','F52E','F544']
 t={}; cur={}; mx=collections.defaultdict(int); tot=collections.defaultdict(int)
 seg={}
 def hook(v):
